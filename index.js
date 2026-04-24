@@ -1,73 +1,35 @@
-import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion } from "@whiskeysockets/baileys"
-
-const OWNER = "5493757328010@s.whatsapp.net"
+import makeWASocket, { useMultiFileAuthState, DisconnectReason } from '@whiskeysockets/baileys'
+import { Boom } from '@hapi/boom'
+import qrcode from 'qrcode-terminal'
 
 async function startBot() {
-  const { state, saveCreds } = await useMultiFileAuthState("auth")
-  const { version } = await fetchLatestBaileysVersion()
+  const { state, saveCreds } = await useMultiFileAuthState('auth')
 
   const sock = makeWASocket({
-    version,
     auth: state,
-    browser: ["GojoBot", "Chrome", "1.0.0"]
+    printQRInTerminal: true
   })
 
-  sock.ev.on("creds.update", saveCreds)
+  sock.ev.on('connection.update', (update) => {
+    const { connection, lastDisconnect, qr } = update
 
-  sock.ev.on("connection.update", async (update) => {
-    const { connection } = update
-
-    if (connection === "open") {
-      console.log("✅ BOT CONECTADO")
+    if (qr) {
+      console.log('ESCANEÁ ESTE QR 👇')
+      qrcode.generate(qr, { small: true })
     }
 
-    if (connection === "close") {
-      console.log("❌ Reconectando...")
-      startBot()
-    }
-  })
+    if (connection === 'close') {
+      const shouldReconnect =
+        (lastDisconnect?.error instanceof Boom)?.output?.statusCode !== DisconnectReason.loggedOut
 
-  sock.ev.on("messages.upsert", async ({ messages }) => {
-    const msg = messages[0]
-    if (!msg.message) return
-
-    const from = msg.key.remoteJid
-    const isGroup = from.endsWith("@g.us")
-    const sender = isGroup ? msg.key.participant : from
-
-    if (sender !== OWNER) return
-
-    const text =
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      ""
-
-    if (text === ".menu") {
-      await sock.sendMessage(from, {
-        text: `𓂀 𝙂𝙊𝙅𝙊 𝘽𝙊𝙏 𓂀
-
-╭─❖ COMANDOS ❖─╮
-• .menu → ver comandos
-• .info → info del bot
-• .ping → responde
-╰──────────────╯`
-      })
-    }
-
-    if (text === ".info") {
-      await sock.sendMessage(from, {
-        text: `𓂀 INFO 𓂀
-
-Bot de Satoru
-Creado por Kevin
-+54 9 3757328010`
-      })
-    }
-
-    if (text === ".ping") {
-      await sock.sendMessage(from, { text: "🏓 Pong" })
+      console.log('🔁 Reconectando...')
+      if (shouldReconnect) startBot()
+    } else if (connection === 'open') {
+      console.log('✅ BOT CONECTADO')
     }
   })
+
+  sock.ev.on('creds.update', saveCreds)
 }
 
 startBot()
